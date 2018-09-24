@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -11,6 +12,7 @@ import (
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/so0k/aws-nat-router/pkg/discover"
+	"github.com/so0k/aws-nat-router/pkg/healthcheck"
 	"github.com/so0k/aws-nat-router/pkg/router"
 	"github.com/urfave/cli"
 )
@@ -50,6 +52,23 @@ func main() {
 			Usage:  "`ID` the NAT Instances are tagged with",
 			EnvVar: "NAT_CLUSTER_ID",
 		},
+		cli.BoolFlag{
+			Name:   "public",
+			Usage:  "Use Public IPs for health checks",
+			EnvVar: "NAT_HC_PUBLIC",
+		},
+		cli.IntFlag{
+			Name:   "port,p",
+			Value:  3128,
+			Usage:  "`PORT` for TCP HealthChecks",
+			EnvVar: "NAT_HC_PORT",
+		},
+		cli.DurationFlag{
+			Name:   "timeout",
+			Value:  50 * time.Millisecond,
+			Usage:  "`DURATION` before HealthChecks time out",
+			EnvVar: "NAT_HC_TIMEOUT",
+		},
 	}
 	app := cli.NewApp()
 	app.Name = "aws-nat-router"
@@ -72,6 +91,9 @@ type config struct {
 	region       string
 	vpcId        string
 	clusterId    string
+	public       bool
+	port         int
+	timeout      time.Duration
 }
 
 func parseConfig(c *cli.Context) (*config, error) {
@@ -81,6 +103,9 @@ func parseConfig(c *cli.Context) (*config, error) {
 		region:       c.String("region"),
 		vpcId:        c.String("vpc-id"),
 		clusterId:    c.String("cluster-id"),
+		public:       c.Bool("public"),
+		port:         c.Int("port"),
+		timeout:      c.Duration("timeout"),
 	}
 	lStr := c.String("log-level")
 	l, err := log.ParseLevel(lStr)
@@ -110,36 +135,41 @@ func run(c *cli.Context) error {
 	svc := ec2.New(session.New(conf))
 	f, _ := discover.NewAwsFinder(svc)
 	nis, _ := f.FindNatInstances(appConf.clusterId, appConf.vpcId)
+
+	// Check liveness for each instance
+	// TODO(so0k): use go routines to check in parallel
+	var liveNis, deadNis []*discover.NatInstance
 	for _, ni := range nis {
-		fmt.Printf("Instance: %v - Zone: %v - State: %v - PrivateIP: %v\n",
-			ni.Id,
-			ni.Zone,
-			ni.State,
-			ni.PrivateIP,
-		)
+		var addr string
+		if appConf.public {
+			addr = fmt.Sprintf("%v:%v", ni.PublicIP, appConf.port)
+		} else {
+			addr = fmt.Sprintf("%v:%v", ni.PrivateIP, appConf.port)
+		}
+		err := healthcheck.TCPCheck(addr, appConf.timeout)
+		if err != nil {
+			log.Debugf("Instance %v (%v) is dead :(", ni.Id, addr)
+			deadNis = append(deadNis, ni)
+		} else {
+			log.Debugf("Instance %v (%v) is alive!", ni.Id, addr)
+			liveNis = append(liveNis, ni)
+		}
 	}
-
 	rts, _ := f.FindRoutingTables(appConf.clusterId, appConf.vpcId)
-	for _, rt := range rts {
-		fmt.Printf("Routing Table: %v - Zone: %v\n",
-			rt.Id,
-			rt.Zone,
-		)
-	}
 
-	// TODO: healthcecks and filter out unhealthy / stopped instances
+	// Allocate routes to live NATInstances
+	nias := router.AllocateRoutes(liveNis, rts)
 
-	nias := router.AllocateRoutes(nis, rts)
-
-	// Apply Allocations
+	// Apply Allocations and ensure SourceDestCheck is disabled
 	r, _ := router.NewAwsRouter(svc)
 	for _, nia := range nias {
+		r.PreventSourceDestCheck(nia.NatInstance)
 		for _, rt := range nia.RoutingTables {
 			r.UpsertNatRoute("0.0.0.0/0", nia.NatInstance, rt)
 		}
 	}
 
-	// TODO: start recovery for unhealthy instances (async... on next iteration they will be re-evaluated)
+	// TODO: start recovery for unhealthy instances (just issue command... on next iteration Nat Instances will be re-evaluated)
 	return nil
 }
 

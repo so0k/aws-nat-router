@@ -13,15 +13,16 @@ import (
 
 // NatInstance holds information about a Nat Instance
 type NatInstance struct {
-	Id        string
-	State     string
-	PrivateIP string
-	PublicIP  string
-	Zone      string
+	Id              string
+	State           string
+	PrivateIP       string
+	PublicIP        string
+	Zone            string
+	SourceDestCheck bool
 }
 
 // FindNatInstances returns a list of Nat Instances tagged for router
-func (r *AwsFinder) FindNatInstances(clusterId, vpcId string) ([]NatInstance, error) {
+func (r *AwsFinder) FindNatInstances(clusterId, vpcId string) ([]*NatInstance, error) {
 	input := &ec2.DescribeInstancesInput{
 		Filters: []*ec2.Filter{
 			{
@@ -39,15 +40,16 @@ func (r *AwsFinder) FindNatInstances(clusterId, vpcId string) ([]NatInstance, er
 		},
 	}
 
-	var natInstances []NatInstance
+	var natInstances []*NatInstance
 	log.Debugf("Finding Instances with 'tag:%v=%v' and 'vpc-id=%v'", clusterTag, clusterId, vpcId)
 	err := r.ec2.DescribeInstancesPages(input,
 		func(page *ec2.DescribeInstancesOutput, lastPage bool) bool {
 			for _, res := range page.Reservations {
 				for _, i := range res.Instances {
-					ni := NatInstance{
-						Id:    *i.InstanceId,
-						State: *i.State.Name,
+					ni := &NatInstance{
+						Id:              *i.InstanceId,
+						State:           *i.State.Name,
+						SourceDestCheck: *i.SourceDestCheck,
 					}
 					if i.PrivateIpAddress != nil {
 						ni.PrivateIP = *i.PrivateIpAddress

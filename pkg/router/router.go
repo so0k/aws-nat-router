@@ -14,20 +14,20 @@ import (
 type Router interface {
 	// UpsertNatRoute replace or create a route through specified Instance Id
 	// return nil if successful or the AWS error
-	UpsertNatRoute(destinationCidrBlock, instanceId, routeTableId string) error
-	// PreventSourceDestCheck checks if source_dest_check is enabled on the instance interface and disables it
-	PreventSourceDestCheck(instanceId string) error
+	UpsertNatRoute(destinationCidrBlock string, ni *discover.NatInstance, rt *discover.RoutingTable) error
+	// PreventSourceDestCheck ensures source/destination checking is disabled as required for a NAT instance to perform NAT
+	PreventSourceDestCheck(ni *discover.NatInstance) error
 }
 
 // NatInstanceAllocation holds a list of all the routingTables allocated to a specific NatInstance
 type NatInstanceAllocation struct {
-	NatInstance   discover.NatInstance
-	RoutingTables []discover.RoutingTable
+	NatInstance   *discover.NatInstance
+	RoutingTables []*discover.RoutingTable
 }
 
 // AllocateRoutes allocates RoutingTables to available NatInstances
 // this function assumes the passed in list of NatInstances are all healthy
-func AllocateRoutes(nis []discover.NatInstance, rts []discover.RoutingTable) []*NatInstanceAllocation {
+func AllocateRoutes(nis []*discover.NatInstance, rts []*discover.RoutingTable) []*NatInstanceAllocation {
 	if len(nis) < 1 {
 		return nil
 	}
@@ -54,7 +54,7 @@ func AllocateRoutes(nis []discover.NatInstance, rts []discover.RoutingTable) []*
 }
 
 // allocateRouteToLeast will find the NatInstance with least allocated routing tables to allocate to
-func allocateRouteToLeast(rt discover.RoutingTable, nrs []*NatInstanceAllocation) {
+func allocateRouteToLeast(rt *discover.RoutingTable, nrs []*NatInstanceAllocation) {
 	// find NatRoute with least routing tables
 	c := nrs[0]
 	for _, i := range nrs {
@@ -79,7 +79,7 @@ func NewAwsRouter(svc ec2iface.EC2API) (*AwsRouter, error) {
 }
 
 // UpsertNatRoute replace or create a route through specified Instance Id
-func (r *AwsRouter) UpsertNatRoute(destinationCidrBlock string, ni discover.NatInstance, rt discover.RoutingTable) error {
+func (r *AwsRouter) UpsertNatRoute(destinationCidrBlock string, ni *discover.NatInstance, rt *discover.RoutingTable) error {
 	input := &ec2.ReplaceRouteInput{
 		DestinationCidrBlock: aws.String(destinationCidrBlock),
 		InstanceId:           aws.String(ni.Id),
@@ -114,5 +114,39 @@ func (r *AwsRouter) UpsertNatRoute(destinationCidrBlock string, ni discover.NatI
 		return nil
 	}
 	log.Debugf("\tUpdated")
+	return nil
+}
+
+// PreventSourceDestCheck ensures source/destination checking is disabled as required for a NAT instance to perform NAT
+func (r *AwsRouter) PreventSourceDestCheck(ni *discover.NatInstance) error {
+	// https://docs.aws.amazon.com/sdk-for-go/api/service/ec2/#EC2.ModifyInstanceAttribute
+	// Note: Using this action to change the security groups associated with an elastic network interface (ENI)
+	// attached to an instance in a VPC can result in an error if the instance has more than one ENI.
+	// To change the security groups associated with an ENI attached to an instance that has multiple ENIs,
+	// we recommend that you use the ModifyNetworkInterfaceAttribute action.
+
+	if ni.SourceDestCheck {
+		log.Debugf("SourceDestCheck for %v is enabled, disabling ...", ni.Id)
+		input := &ec2.ModifyInstanceAttributeInput{
+			InstanceId: aws.String(ni.Id),
+			SourceDestCheck: &ec2.AttributeBooleanValue{
+				Value: aws.Bool(false),
+			},
+		}
+
+		_, err := r.ec2.ModifyInstanceAttribute(input)
+
+		// https://docs.aws.amazon.com/sdk-for-go/api/service/ec2/#EC2.ModifyNetworkInterfaceAttribute
+		// input := &ec2.ModifyNetworkInterfaceAttributeInput{
+		// 	NetworkInterfaceId: aws.String("eni-686ea200"),
+		// 	SourceDestCheck: &ec2.AttributeBooleanValue{
+		// 		Value: aws.Bool(false),
+		// 	},
+		// }
+		// _, err := r.ec2.ModifyNetworkInterfaceAttribute(input)
+		if err != nil {
+			return errors.Wrap(err, "Unable to PreventSourceDestCheck")
+		}
+	}
 	return nil
 }

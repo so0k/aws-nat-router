@@ -17,7 +17,7 @@ type RoutingTable struct {
 }
 
 // FindRoutingTables returns a list of Routing Tables to route through cluster
-func (r *AwsFinder) FindRoutingTables(clusterId, vpcId string) ([]RoutingTable, error) {
+func (r *AwsFinder) FindRoutingTables(clusterId, vpcId string) ([]*RoutingTable, error) {
 	input := &ec2.DescribeRouteTablesInput{
 		Filters: []*ec2.Filter{
 			{
@@ -41,9 +41,9 @@ func (r *AwsFinder) FindRoutingTables(clusterId, vpcId string) ([]RoutingTable, 
 		return nil, errors.Wrap(err, "Unable to find RoutingTables")
 	}
 
-	var routingTables []RoutingTable
+	var routingTables []*RoutingTable
 	for _, r := range result.RouteTables {
-		rt := RoutingTable{
+		rt := &RoutingTable{
 			Id: *r.RouteTableId,
 		}
 		for _, t := range r.Tags {

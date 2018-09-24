@@ -25,8 +25,9 @@ If there are multiple healthy NAT Instances per zone, it will try to allocate th
 
 - [x] Discover Tagged Instances
 - [x] Discover Tagged Routing Tables
-- [ ] Implement TCP HealthCheck
-- [ ] Filter down to only Healthy NAT Instances
+- [x] Implement TCP HealthCheck
+- [x] Filter down to only Healthy NAT Instances
+- [x] Implement `PreventSourceDestCheck`
 - [x] Allocate Routing Tables to Instances
 - [x] Update Routing Tables with allocations
 - [ ] Implement recovery actions (Restart or Terminate unhealthy nodes)
