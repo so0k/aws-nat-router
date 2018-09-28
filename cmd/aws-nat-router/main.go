@@ -140,7 +140,10 @@ func run(c *cli.Context) error {
 	conf := initAwsConfig(appConf.awsAccessKey, appConf.awsSecretKey, appConf.region)
 	session := session.New(conf)
 
-	i, _ := discover.NewAwsIdentifierFromSession(session)
+	i, err := discover.NewAwsIdentifierFromSession(session)
+	if err != nil {
+		return err
+	}
 	myId, err := i.GetIdentity()
 	if err != nil && appConf.ec2Election {
 		log.Error("EC2 Election requested but not possible, disable --ec2-election")
@@ -148,8 +151,14 @@ func run(c *cli.Context) error {
 		cli.ShowAppHelpAndExit(c, 1)
 	}
 
-	f, _ := discover.NewAwsFinderFromSession(session)
-	nis, _ := f.FindNatInstances(appConf.clusterId, appConf.vpcId)
+	f, err := discover.NewAwsFinderFromSession(session)
+	if err != nil {
+		return err
+	}
+	nis, err := f.FindNatInstances(appConf.clusterId, appConf.vpcId)
+	if err != nil {
+		return err
+	}
 
 	// Check liveness for each instance
 	// TODO(so0k): use go routines to check in parallel
