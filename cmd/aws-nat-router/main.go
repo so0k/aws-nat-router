@@ -39,10 +39,6 @@ func main() {
 			Usage: "Optional aws secret key to use",
 		},
 		cli.StringFlag{
-			Name:  "aws-role-arn",
-			Usage: "Optional aws role to assume",
-		},
-		cli.StringFlag{
 			Name:   "region,r",
 			Value:  "ap-southeast-1",
 			Usage:  "AWS `REGION`",
@@ -146,7 +142,7 @@ func run(c *cli.Context) error {
 		log.Error(err)
 		cli.ShowAppHelpAndExit(c, 1)
 	}
-	conf := initAwsConfig(appConf.awsAccessKey, appConf.awsSecretKey, appConf.awsRoleARN, appConf.region)
+	conf := initAwsConfig(appConf.awsAccessKey, appConf.awsSecretKey, appConf.region)
 	session := session.New(conf)
 
 	i, err := discover.NewAwsIdentifierFromSession(session)
@@ -217,7 +213,7 @@ func run(c *cli.Context) error {
 	return nil
 }
 
-func initAwsConfig(accessKey, secretKey, roleARN, region string) *aws.Config {
+func initAwsConfig(accessKey, secretKey, region string) *aws.Config {
 	awsConfig := aws.NewConfig()
 	creds := credentials.NewChainCredentials([]credentials.Provider{
 		&credentials.StaticProvider{
