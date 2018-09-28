@@ -6,7 +6,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
+	"github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds"
+	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -227,8 +228,8 @@ func initAwsConfig(accessKey, secretKey, roleARN, region string) *aws.Config {
 		},
 		&credentials.EnvProvider{},
 		&credentials.SharedCredentialsProvider{},
-		&stscreds.AssumeRoleProvider{
-			RoleARN: roleARN,
+		&ec2rolecreds.EC2RoleProvider{
+			Client: ec2metadata.New(session.New()),
 		},
 	})
 	awsConfig.WithCredentials(creds)
