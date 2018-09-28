@@ -1,0 +1,50 @@
+# Golang CircleCI 2.0 configuration file
+#
+# Check https://circleci.com/docs/2.0/language-go/ for more details
+# ref https://gist.github.com/azihsoyn/7f307e39e4a493c24235367e711e3725
+version: 2
+jobs:
+  # If you are not using workflows, the jobs map must contain a job named build (default)
+  build:
+    working_directory: /go/src/github.com/so0k/aws-nat-router
+    docker:
+      - image: circleci/golang:1.10.0
+    environment:
+      - GOCACHE: "/tmp/go/cache"
+      - DEP_VERSION: 0.4.1
+    steps:
+      - run: git config --global url.ssh://git@github.com/so0k.insteadOf https://github.com/so0k
+      - checkout
+      - restore_cache:
+          key: gopkg-{{ .Branch }}-{{ checksum "Gopkg.lock" }}
+          paths:
+              - /go/src/github.com/so0k/aws-nat-router/vendor
+      - run:
+          name: download-libraries
+          command: |
+            if [ ! -d /go/src/github.com/so0k/aws-nat-router/vendor ]; then
+                curl -L -s https://github.com/golang/dep/releases/download/v${DEP_VERSION}/dep-linux-amd64 -o /go/bin/dep
+                chmod +x /go/bin/dep
+                /go/bin/dep ensure
+            fi
+      - save_cache:
+          key: gopkg-{{ .Branch }}-{{ checksum "Gopkg.lock" }}
+          paths:
+              - /go/src/github.com/so0k/aws-nat-router/vendor
+      - restore_cache:
+          keys:
+              - build-cache-{{ .Branch }}-{{ .Environment.CIRCLE_PREVIOUS_BUILD_NUM }}
+          paths:
+              - /tmp/go/cache
+      - run:
+          name: test
+          command: |
+            mkdir -p $GOCACHE
+            go build -v -o /tmp/aws-nat-router cmd/aws-nat-router/main.go 
+            go test -p 6 -race ./cmd/aws-nat-router/...
+      - save_cache:
+          key: build-cache-{{ .Branch }}-{{ .Environment.CIRCLE_BUILD_NUM }}
+          paths:
+              - /tmp/go/cache
+      - store_artifacts:
+          path: /tmp/aws-nat-router
