@@ -2,6 +2,7 @@ package router
 
 import (
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 
@@ -71,8 +72,13 @@ type AwsRouter struct {
 	ec2 ec2iface.EC2API
 }
 
-// NewAwsRouter returns AwsRouter for ec2 svc
-func NewAwsRouter(svc ec2iface.EC2API) (*AwsRouter, error) {
+// NewAwsFinderFromSession returns Router from session
+func NewAwsRouterFromSession(session *session.Session) (Router, error) {
+	return NewAwsRouter(ec2.New(session))
+}
+
+// NewAwsRouter returns Router for ec2 svc
+func NewAwsRouter(svc ec2iface.EC2API) (Router, error) {
 	return &AwsRouter{
 		ec2: svc,
 	}, nil

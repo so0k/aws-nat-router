@@ -3,12 +3,12 @@ package main
 import (
 	"fmt"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/so0k/aws-nat-router/pkg/discover"
@@ -53,6 +53,11 @@ func main() {
 			EnvVar: "NAT_CLUSTER_ID",
 		},
 		cli.BoolFlag{
+			Name:   "ec2-election",
+			Usage:  "Use EC2 metadata leader election",
+			EnvVar: "NAT_EC2_ELECTION",
+		},
+		cli.BoolFlag{
 			Name:   "public",
 			Usage:  "Use Public IPs for health checks",
 			EnvVar: "NAT_HC_PUBLIC",
@@ -91,6 +96,7 @@ type config struct {
 	region       string
 	vpcId        string
 	clusterId    string
+	ec2Election  bool
 	public       bool
 	port         int
 	timeout      time.Duration
@@ -103,6 +109,7 @@ func parseConfig(c *cli.Context) (*config, error) {
 		region:       c.String("region"),
 		vpcId:        c.String("vpc-id"),
 		clusterId:    c.String("cluster-id"),
+		ec2Election:  c.Bool("ec2-election"),
 		public:       c.Bool("public"),
 		port:         c.Int("port"),
 		timeout:      c.Duration("timeout"),
@@ -131,9 +138,17 @@ func run(c *cli.Context) error {
 		cli.ShowAppHelpAndExit(c, 1)
 	}
 	conf := initAwsConfig(appConf.awsAccessKey, appConf.awsSecretKey, appConf.region)
+	session := session.New(conf)
 
-	svc := ec2.New(session.New(conf))
-	f, _ := discover.NewAwsFinder(svc)
+	i, _ := discover.NewAwsIdentifierFromSession(session)
+	myId, err := i.GetIdentity()
+	if err != nil && appConf.ec2Election {
+		log.Error("EC2 Election requested but not possible, disable --ec2-election")
+		log.Error(err)
+		cli.ShowAppHelpAndExit(c, 1)
+	}
+
+	f, _ := discover.NewAwsFinderFromSession(session)
 	nis, _ := f.FindNatInstances(appConf.clusterId, appConf.vpcId)
 
 	// Check liveness for each instance
@@ -153,23 +168,34 @@ func run(c *cli.Context) error {
 		} else {
 			log.Debugf("Instance %v (%v) is alive!", ni.Id, addr)
 			liveNis = append(liveNis, ni)
-		}
-	}
-	rts, _ := f.FindRoutingTables(appConf.clusterId, appConf.vpcId)
-
-	// Allocate routes to live NATInstances
-	nias := router.AllocateRoutes(liveNis, rts)
-
-	// Apply Allocations and ensure SourceDestCheck is disabled
-	r, _ := router.NewAwsRouter(svc)
-	for _, nia := range nias {
-		r.PreventSourceDestCheck(nia.NatInstance)
-		for _, rt := range nia.RoutingTables {
-			r.UpsertNatRoute("0.0.0.0/0", nia.NatInstance, rt)
+			// sorted by LaunchTime
+			sort.Slice(liveNis, func(i, j int) bool {
+				return liveNis[i].LaunchTime.Before(liveNis[j].LaunchTime)
+			})
 		}
 	}
 
-	// TODO: start recovery for unhealthy instances (just issue command... on next iteration Nat Instances will be re-evaluated)
+	log.Infof("Healthy NAT Instances found: %v\n", len(liveNis))
+	if len(liveNis) > 0 && (!appConf.ec2Election || liveNis[0].Id == myId) {
+		log.Debug("ACTIVE")
+		rts, _ := f.FindRoutingTables(appConf.clusterId, appConf.vpcId)
+
+		// Allocate routes to live NATInstances
+		nias := router.AllocateRoutes(liveNis, rts)
+
+		// Apply Allocations and ensure SourceDestCheck is disabled
+		r, _ := router.NewAwsRouterFromSession(session)
+		for _, nia := range nias {
+			r.PreventSourceDestCheck(nia.NatInstance)
+			for _, rt := range nia.RoutingTables {
+				r.UpsertNatRoute("0.0.0.0/0", nia.NatInstance, rt)
+			}
+		}
+	} else {
+		log.Debug("PASSIVE")
+	}
+
+	// TODO(so0k): start recovery for unhealthy instances (just issue command... on next iteration Nat Instances will be re-evaluated)
 	return nil
 }
 

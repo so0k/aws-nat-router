@@ -2,6 +2,7 @@ package discover
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
@@ -19,6 +20,7 @@ type NatInstance struct {
 	PublicIP        string
 	Zone            string
 	SourceDestCheck bool
+	LaunchTime      time.Time
 }
 
 // FindNatInstances returns a list of Nat Instances tagged for router
@@ -50,6 +52,7 @@ func (r *AwsFinder) FindNatInstances(clusterId, vpcId string) ([]*NatInstance, e
 						Id:              *i.InstanceId,
 						State:           *i.State.Name,
 						SourceDestCheck: *i.SourceDestCheck,
+						LaunchTime:      *i.LaunchTime,
 					}
 					if i.PrivateIpAddress != nil {
 						ni.PrivateIP = *i.PrivateIpAddress
