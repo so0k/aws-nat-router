@@ -38,6 +38,10 @@ func main() {
 			Usage: "Optional aws secret key to use",
 		},
 		cli.StringFlag{
+			Name:  "aws-role-arn",
+			Usage: "Optional aws role to assume",
+		},
+		cli.StringFlag{
 			Name:   "region,r",
 			Value:  "ap-southeast-1",
 			Usage:  "AWS `REGION`",
@@ -95,6 +99,7 @@ func main() {
 type config struct {
 	awsAccessKey string
 	awsSecretKey string
+	awsRoleARN   string
 	region       string
 	vpcId        string
 	clusterId    string
@@ -108,6 +113,7 @@ func parseConfig(c *cli.Context) (*config, error) {
 	conf := &config{
 		awsSecretKey: c.String("aws-secret-key"),
 		awsAccessKey: c.String("aws-access-key"),
+		awsRoleARN:   c.String("aws-role-arn"),
 		region:       c.String("region"),
 		vpcId:        c.String("vpc-id"),
 		clusterId:    c.String("cluster-id"),
@@ -139,7 +145,7 @@ func run(c *cli.Context) error {
 		log.Error(err)
 		cli.ShowAppHelpAndExit(c, 1)
 	}
-	conf := initAwsConfig(appConf.awsAccessKey, appConf.awsSecretKey, appConf.region)
+	conf := initAwsConfig(appConf.awsAccessKey, appConf.awsSecretKey, appConf.awsRoleARN, appConf.region)
 	session := session.New(conf)
 
 	i, err := discover.NewAwsIdentifierFromSession(session)
@@ -210,7 +216,7 @@ func run(c *cli.Context) error {
 	return nil
 }
 
-func initAwsConfig(accessKey, secretKey, region string) *aws.Config {
+func initAwsConfig(accessKey, secretKey, roleARN, region string) *aws.Config {
 	awsConfig := aws.NewConfig()
 	creds := credentials.NewChainCredentials([]credentials.Provider{
 		&credentials.StaticProvider{
@@ -221,7 +227,9 @@ func initAwsConfig(accessKey, secretKey, region string) *aws.Config {
 		},
 		&credentials.EnvProvider{},
 		&credentials.SharedCredentialsProvider{},
-		&stscreds.AssumeRoleProvider{},
+		&stscreds.AssumeRoleProvider{
+			RoleARN: roleARN,
+		},
 	})
 	awsConfig.WithCredentials(creds)
 	awsConfig.WithRegion(region)
