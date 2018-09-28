@@ -6,6 +6,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -219,6 +221,7 @@ func initAwsConfig(accessKey, secretKey, region string) *aws.Config {
 		},
 		&credentials.EnvProvider{},
 		&credentials.SharedCredentialsProvider{},
+		&stscreds.AssumeRoleProvider{},
 	})
 	awsConfig.WithCredentials(creds)
 	awsConfig.WithRegion(region)
