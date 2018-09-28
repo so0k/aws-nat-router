@@ -65,6 +65,7 @@ func (r *AwsFinder) FindNatInstances(clusterId, vpcId string) ([]*NatInstance, e
 							ni.Zone = *t.Value
 						}
 					}
+					log.Debugf("Discovered %v (%v)", ni.Id, ni.PrivateIP)
 					natInstances = append(natInstances, ni)
 				}
 			}
