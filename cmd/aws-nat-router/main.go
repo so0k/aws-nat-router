@@ -235,9 +235,17 @@ func (c *RouteController) RunOnce() error {
 
 		// Rebuild allocation based on discovered information
 		oldNias := router.GetCurrentAllocation(liveNis, rts)
+		log.Debug("======OLD ROUTES=========")
+		for _, nia := range oldNias {
+			log.Debug(nia.String())
+		}
 
 		// Allocate routes to live NATInstances
 		newNias := router.AllocateRoutes(liveNis, rts)
+		log.Debug("======NEW ROUTES=========")
+		for _, nia := range newNias {
+			log.Debug(nia.String())
+		}
 
 		// Verify if allocation differs to avoid exceeding API rate limits
 		if router.AllocationDiffers(oldNias, newNias) {
