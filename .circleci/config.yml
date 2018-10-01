@@ -8,7 +8,7 @@ jobs:
   build:
     working_directory: /go/src/github.com/so0k/aws-nat-router
     docker:
-      - image: circleci/golang:1.10.0
+      - image: circleci/golang:q.10.0
     environment:
       - GOCACHE: "/tmp/go/cache"
       - DEP_VERSION: 0.4.1
@@ -67,7 +67,10 @@ workflows:
   version: 2
   main:
     jobs:
-      - build
+      - build:
+          filters:  # required since `publish-github-release` has tag filters AND requires `build`
+            tags:
+              only: /.*/ # run for all branches and all tags
       - publish-github-release:
           requires:
             - build
@@ -75,4 +78,4 @@ workflows:
             branches:
               ignore: /.*/
             tags:
-              only: /^\d+\.\d+\.\d+$/
+              only: /^\d+\.\d+\.\d+$/ # only run for tags that match this regex
