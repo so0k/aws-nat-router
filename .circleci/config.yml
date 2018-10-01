@@ -40,11 +40,39 @@ jobs:
           name: test
           command: |
             mkdir -p $GOCACHE
-            go build -v -o /tmp/aws-nat-router cmd/aws-nat-router/main.go 
+            go build -v -o ./bin/aws-nat-router cmd/aws-nat-router/main.go 
             go test -p 6 -race ./cmd/aws-nat-router/...
       - save_cache:
           key: build-cache-{{ .Branch }}-{{ .Environment.CIRCLE_BUILD_NUM }}
           paths:
               - /tmp/go/cache
+      - persist_to_workspace:
+          root: ./bin
+          paths:
+            - aws-nat-router
       - store_artifacts:
-          path: /tmp/aws-nat-router
+          path: ./bin/aws-nat-router
+  publish-github-release:
+    docker:
+      - image: cibuilds/github:0.10
+    steps:
+      - attach_workspace:
+          at: ./bin
+      - run:
+          name: "Publish Release on GitHub"
+          command: |
+            VERSION=$(./bin/aws-nat-router --version | cut -d" " -f3)
+            ghr -t ${GITHUB_TOKEN} -u ${CIRCLE_PROJECT_USERNAME} -r ${CIRCLE_PROJECT_REPONAME} -c ${CIRCLE_SHA1} -delete ${VERSION} ./bin
+workflows:
+  version: 2
+  main:
+    jobs:
+      - build
+      - publish-github-release:
+          requires:
+            - build
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^\d+\.\d+\.\d+$/

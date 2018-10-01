@@ -2,6 +2,8 @@
 
 Note: This is alpha software
 
+[![CircleCI](https://circleci.com/gh/so0k/aws-nat-router.svg?style=svg)](https://circleci.com/gh/so0k/aws-nat-router)
+
 ## Overview
 
 This controller will discover tagged NAT Instances and Routing Tables, filter down to healthy NAT Instances and allocate egress routes through the available NAT Instances for each Routing Table. To ensure only 1 router updates the routes, instances are sorted by LaunchDate and the oldest healthy instance will be considered the leader.
@@ -99,7 +101,15 @@ Controller implementation:
 
 - [x] Use AWS secrets from commandline args / env vars or ec2 Role
 - [x] Take region / vpc-id / cluster-id arguments for discovery
-- [ ] Take interval arguments and loop `runOnce` on interval
+- [x] Take interval arguments and loop `runOnce` on interval
+
+Deployment:
+
+The controller is meant to run on EC2 Instances, prior to k8s bootstrap, thus we can't use Docker / Kubernetes as a deployment mechanism.
+
+- [ ] Add GitHub release to CircleCI
+- [ ] Add systemd unit file
+- [ ] Add cloud-init sample
 
 ## Reference
 
