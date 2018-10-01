@@ -8,7 +8,7 @@ jobs:
   build:
     working_directory: /go/src/github.com/so0k/aws-nat-router
     docker:
-      - image: circleci/golang:q.10.0
+      - image: circleci/golang:1.10.0
     environment:
       - GOCACHE: "/tmp/go/cache"
       - DEP_VERSION: 0.4.1
