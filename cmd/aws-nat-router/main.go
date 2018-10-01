@@ -230,7 +230,7 @@ func (c *RouteController) RunOnce() error {
 
 	log.Infof("Healthy NAT Instances found: %v", len(liveNis))
 	if len(liveNis) > 0 && (!c.config.ec2Election || liveNis[0].Id == c.config.instanceId) {
-		log.Debug("ACTIVE")
+		log.Info("ACTIVE")
 		rts, _ := f.FindRoutingTables(c.config.clusterId, c.config.vpcId)
 
 		// Rebuild allocation based on discovered information
@@ -255,7 +255,7 @@ func (c *RouteController) RunOnce() error {
 			log.Info("Routes are already up to date")
 		}
 	} else {
-		log.Debug("PASSIVE")
+		log.Info("PASSIVE")
 	}
 	// TODO(so0k): start recovery for unhealthy instances (just issue command... on next iteration Nat Instances will be re-evaluated)
 	return nil
