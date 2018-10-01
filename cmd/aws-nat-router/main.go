@@ -215,6 +215,7 @@ func (c *RouteController) RunOnce() error {
 		}
 		err := healthcheck.TCPCheck(addr, c.config.timeout)
 		if err != nil {
+			log.Debugf("\tError for TCPCheck: %v", err)
 			log.Debugf("Instance %v (%v) is dead :(", ni.Id, addr)
 			deadNis = append(deadNis, ni)
 		} else {

@@ -1,6 +1,7 @@
 package router
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -178,6 +179,7 @@ func GetCurrentAllocation(nis []*discover.NatInstance, rts []*discover.RoutingTa
 
 	byInstanceId := make(map[string]*NatInstanceAllocation)
 	for _, rt := range rts {
+		log.Debugf("rt: %v - egress: %v", rt.Id, rt.EgressNatInstanceId)
 		if nia, ok := byInstanceId[rt.EgressNatInstanceId]; ok {
 			nia.RoutingTables = append(nia.RoutingTables)
 		} else {
@@ -187,12 +189,13 @@ func GetCurrentAllocation(nis []*discover.NatInstance, rts []*discover.RoutingTa
 					NatInstance: ni,
 				}
 				nia.RoutingTables = append(nia.RoutingTables, rt)
+				byInstanceId[ni.Id] = nia
 			}
 		}
 	}
 
 	// copy values out of map into slice
-	all := make([]*NatInstanceAllocation, 0, len(byInstanceId))
+	all := make([]*NatInstanceAllocation, len(byInstanceId))
 	i := 0
 	for _, v := range byInstanceId {
 		all[i] = v
@@ -247,4 +250,23 @@ func AllocationDiffers(old, new []*NatInstanceAllocation) bool {
 		}
 	}
 	return false
+}
+
+func (a NatInstanceAllocation) String() string {
+	s := fmt.Sprintf("Instance: %v - %v (%v / %v) SourceDestCheck: %v Zone: %v \n",
+		a.NatInstance.Id,
+		a.NatInstance.State,
+		a.NatInstance.PrivateIP,
+		a.NatInstance.PublicIP,
+		a.NatInstance.SourceDestCheck,
+		a.NatInstance.Zone,
+	)
+	for _, r := range a.RoutingTables {
+		s += fmt.Sprintf("\t Route: %v Zone: %v (Egress: %v)\n",
+			r.Id,
+			r.Zone,
+			r.EgressNatInstanceId,
+		)
+	}
+	return s
 }
