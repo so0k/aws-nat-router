@@ -61,10 +61,7 @@ jobs:
       - run:
           name: "Publish Release on GitHub"
           command: |
-            ls -lah /tmp
-            ls -lah /tmp/bin
-            # VERSION=$(/tmp/bin/aws-nat-router --version | cut -d" " -f3)
-            # ghr -t ${GITHUB_TOKEN} -u ${CIRCLE_PROJECT_USERNAME} -r ${CIRCLE_PROJECT_REPONAME} -c ${CIRCLE_SHA1} -delete ${VERSION} /tmp/bin
+            ghr -t ${GITHUB_TOKEN} -u ${CIRCLE_PROJECT_USERNAME} -r ${CIRCLE_PROJECT_REPONAME} -c ${CIRCLE_TAG} -delete ${VERSION} /tmp/bin
 workflows:
   version: 2
   main:
