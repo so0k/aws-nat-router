@@ -215,8 +215,8 @@ func (c *RouteController) RunOnce() error {
 		}
 		err := healthcheck.TCPCheck(addr, c.config.timeout)
 		if err != nil {
-			log.Debugf("\tError for TCPCheck: %v", err)
 			log.Debugf("Instance %q (%v) is dead :(", ni.Id, addr)
+			log.Debugf("\tError for TCPCheck: %v", err)
 			deadNis = append(deadNis, ni)
 		} else {
 			log.Debugf("Instance %q (%v) is alive!", ni.Id, addr)
@@ -235,17 +235,9 @@ func (c *RouteController) RunOnce() error {
 
 		// Rebuild allocation based on discovered information
 		oldNias := router.GetCurrentAllocation(liveNis, rts)
-		log.Debug("======OLD ROUTES=========")
-		for _, nia := range oldNias {
-			log.Debug(nia.String())
-		}
 
 		// Allocate routes to live NATInstances
 		newNias := router.AllocateRoutes(liveNis, rts)
-		log.Debug("======NEW ROUTES=========")
-		for _, nia := range newNias {
-			log.Debug(nia.String())
-		}
 
 		// Verify if allocation differs to avoid exceeding API rate limits
 		if router.AllocationDiffers(oldNias, newNias) {
