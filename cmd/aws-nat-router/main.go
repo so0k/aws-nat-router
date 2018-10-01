@@ -228,7 +228,7 @@ func (c *RouteController) RunOnce() error {
 		}
 	}
 
-	log.Infof("Healthy NAT Instances found: %v\n", len(liveNis))
+	log.Infof("Healthy NAT Instances found: %v", len(liveNis))
 	if len(liveNis) > 0 && (!c.config.ec2Election || liveNis[0].Id == c.config.instanceId) {
 		log.Debug("ACTIVE")
 		rts, _ := f.FindRoutingTables(c.config.clusterId, c.config.vpcId)
