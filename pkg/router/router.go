@@ -182,7 +182,7 @@ func GetCurrentAllocation(nis []*discover.NatInstance, rts []*discover.RoutingTa
 		log.Debugf("rt: %q - egress: %q", rt.Id, rt.EgressNatInstanceId)
 		if nia, ok := byInstanceId[rt.EgressNatInstanceId]; ok {
 			log.Debugf("rt: hit")
-			nia.RoutingTables = append(nia.RoutingTables)
+			nia.RoutingTables = append(nia.RoutingTables, rt)
 		} else {
 			log.Debugf("rt: miss")
 			ni := findNis(nis, rt.EgressNatInstanceId)
