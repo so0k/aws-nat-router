@@ -107,7 +107,7 @@ Deployment:
 
 The controller is meant to run on EC2 Instances, prior to k8s bootstrap, thus we can't use Docker / Kubernetes as a deployment mechanism.
 
-- [ ] Add GitHub release to CircleCI
+- [x] Add GitHub release to CircleCI
 - [ ] Add systemd unit file
 - [ ] Add cloud-init sample
 
