@@ -194,7 +194,7 @@ func (c *RouteController) Run() error {
 }
 
 func (c *RouteController) RunOnce() error {
-	log.Info("Reconcilation started")
+	log.Info("Reconciliation started")
 	f, err := discover.NewAwsFinderFromSession(c.session)
 	if err != nil {
 		return err
