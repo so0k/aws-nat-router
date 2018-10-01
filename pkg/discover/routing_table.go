@@ -12,8 +12,9 @@ import (
 
 // RoutingTable holds information about a Routing Table
 type RoutingTable struct {
-	Id   string
-	Zone string
+	Id                  string
+	Zone                string
+	EgressNatInstanceId string
 }
 
 // FindRoutingTables returns a list of Routing Tables to route through cluster
@@ -46,6 +47,13 @@ func (r *AwsFinder) FindRoutingTables(clusterId, vpcId string) ([]*RoutingTable,
 		rt := &RoutingTable{
 			Id: *r.RouteTableId,
 		}
+		for _, route := range r.Routes {
+			// hardcoding egress = 0.0.0.0/0
+			if *route.DestinationCidrBlock == "0.0.0.0/0" && route.InstanceId != nil {
+				rt.EgressNatInstanceId = *route.InstanceId
+			}
+		}
+
 		for _, t := range r.Tags {
 			if *t.Key == zoneTag {
 				rt.Zone = *t.Value

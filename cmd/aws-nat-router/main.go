@@ -46,7 +46,7 @@ func main() {
 		},
 		cli.StringFlag{
 			Name:   "vpc-id",
-			Usage:  "Required `ID` of the VPC the NAT Instnaces live in",
+			Usage:  "Required `ID` of the VPC the NAT Instances live in",
 			EnvVar: "NAT_VPC_ID",
 		},
 		cli.StringFlag{
@@ -54,6 +54,12 @@ func main() {
 			Value:  "squid",
 			Usage:  "`ID` the NAT Instances are tagged with",
 			EnvVar: "NAT_CLUSTER_ID",
+		},
+		cli.DurationFlag{
+			Name:   "interval",
+			Value:  10 * time.Second,
+			Usage:  "`DURATION` Interval for evaluating NAT Instances and updating routes",
+			EnvVar: "NAT_INTERVAL",
 		},
 		cli.BoolFlag{
 			Name:   "ec2-election",
@@ -101,9 +107,11 @@ type config struct {
 	vpcId        string
 	clusterId    string
 	ec2Election  bool
+	instanceId   string
 	public       bool
 	port         int
 	timeout      time.Duration
+	interval     time.Duration
 }
 
 func parseConfig(c *cli.Context) (*config, error) {
@@ -115,6 +123,7 @@ func parseConfig(c *cli.Context) (*config, error) {
 		vpcId:        c.String("vpc-id"),
 		clusterId:    c.String("cluster-id"),
 		ec2Election:  c.Bool("ec2-election"),
+		interval:     c.Duration("interval"),
 		public:       c.Bool("public"),
 		port:         c.Int("port"),
 		timeout:      c.Duration("timeout"),
@@ -129,6 +138,10 @@ func parseConfig(c *cli.Context) (*config, error) {
 	// validate vpc-id
 	if len(conf.vpcId) == 0 {
 		return nil, errors.New("vpc-id can not be blank")
+	}
+
+	if conf.interval < time.Second {
+		return nil, errors.New("Interval should not be less than 1 second")
 	}
 
 	//TODO: validate region?
@@ -149,33 +162,58 @@ func run(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	myId, err := i.GetIdentity()
+	appConf.instanceId, err = i.GetIdentity()
 	if err != nil && appConf.ec2Election {
 		log.Error("EC2 Election requested but not possible, disable --ec2-election")
 		log.Error(err)
 		cli.ShowAppHelpAndExit(c, 1)
 	}
 
-	f, err := discover.NewAwsFinderFromSession(session)
+	rc := &RouteController{
+		config:  appConf,
+		session: session,
+	}
+
+	// start control loop
+	return rc.Run()
+}
+
+type RouteController struct {
+	config  *config
+	session *session.Session
+}
+
+func (c *RouteController) Run() error {
+	for {
+		err := c.RunOnce()
+		if err != nil {
+			log.Warnf("Error updating routes: %v", err)
+		}
+		time.Sleep(c.config.interval)
+	}
+}
+
+func (c *RouteController) RunOnce() error {
+	log.Info("Reconcilation started")
+	f, err := discover.NewAwsFinderFromSession(c.session)
 	if err != nil {
 		return err
 	}
-	nis, err := f.FindNatInstances(appConf.clusterId, appConf.vpcId)
+	nis, err := f.FindNatInstances(c.config.clusterId, c.config.vpcId)
 	if err != nil {
 		return err
 	}
 
 	// Check liveness for each instance
-	// TODO(so0k): use go routines to check in parallel
 	var liveNis, deadNis []*discover.NatInstance
 	for _, ni := range nis {
 		var addr string
-		if appConf.public {
-			addr = fmt.Sprintf("%v:%v", ni.PublicIP, appConf.port)
+		if c.config.public {
+			addr = fmt.Sprintf("%v:%v", ni.PublicIP, c.config.port)
 		} else {
-			addr = fmt.Sprintf("%v:%v", ni.PrivateIP, appConf.port)
+			addr = fmt.Sprintf("%v:%v", ni.PrivateIP, c.config.port)
 		}
-		err := healthcheck.TCPCheck(addr, appConf.timeout)
+		err := healthcheck.TCPCheck(addr, c.config.timeout)
 		if err != nil {
 			log.Debugf("Instance %v (%v) is dead :(", ni.Id, addr)
 			deadNis = append(deadNis, ni)
@@ -190,25 +228,34 @@ func run(c *cli.Context) error {
 	}
 
 	log.Infof("Healthy NAT Instances found: %v\n", len(liveNis))
-	if len(liveNis) > 0 && (!appConf.ec2Election || liveNis[0].Id == myId) {
+	if len(liveNis) > 0 && (!c.config.ec2Election || liveNis[0].Id == c.config.instanceId) {
 		log.Debug("ACTIVE")
-		rts, _ := f.FindRoutingTables(appConf.clusterId, appConf.vpcId)
+		rts, _ := f.FindRoutingTables(c.config.clusterId, c.config.vpcId)
+
+		// Rebuild allocation based on discovered information
+		oldNias := router.GetCurrentAllocation(liveNis, rts)
 
 		// Allocate routes to live NATInstances
-		nias := router.AllocateRoutes(liveNis, rts)
+		newNias := router.AllocateRoutes(liveNis, rts)
 
-		// Apply Allocations and ensure SourceDestCheck is disabled
-		r, _ := router.NewAwsRouterFromSession(session)
-		for _, nia := range nias {
-			r.PreventSourceDestCheck(nia.NatInstance)
-			for _, rt := range nia.RoutingTables {
-				r.UpsertNatRoute("0.0.0.0/0", nia.NatInstance, rt)
+		// Verify if allocation differs to avoid exceeding API rate limits
+		if router.AllocationDiffers(oldNias, newNias) {
+			log.Info("Updating Routes and Source Destination Checks ... ")
+			// Apply Allocations and ensure SourceDestCheck is disabled
+			r, _ := router.NewAwsRouterFromSession(c.session)
+			for _, nia := range newNias {
+				r.PreventSourceDestCheck(nia.NatInstance)
+				for _, rt := range nia.RoutingTables {
+					// hardcoding egress = 0.0.0.0/0
+					r.UpsertNatRoute("0.0.0.0/0", nia.NatInstance, rt)
+				}
 			}
+		} else {
+			log.Info("Routes are already up to date")
 		}
 	} else {
 		log.Debug("PASSIVE")
 	}
-
 	// TODO(so0k): start recovery for unhealthy instances (just issue command... on next iteration Nat Instances will be re-evaluated)
 	return nil
 }

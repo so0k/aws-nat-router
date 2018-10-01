@@ -1,6 +1,8 @@
 package router
 
 import (
+	"sort"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
@@ -29,7 +31,7 @@ type NatInstanceAllocation struct {
 // AllocateRoutes allocates RoutingTables to available NatInstances
 // this function assumes the passed in list of NatInstances are all healthy
 func AllocateRoutes(nis []*discover.NatInstance, rts []*discover.RoutingTable) []*NatInstanceAllocation {
-	if len(nis) < 1 {
+	if len(nis) < 1 || len(rts) < 1 {
 		return nil
 	}
 
@@ -56,6 +58,7 @@ func AllocateRoutes(nis []*discover.NatInstance, rts []*discover.RoutingTable) [
 
 // allocateRouteToLeast will find the NatInstance with least allocated routing tables to allocate to
 func allocateRouteToLeast(rt *discover.RoutingTable, nrs []*NatInstanceAllocation) {
+	// assumes at least 1 NatInstance exists
 	// find NatRoute with least routing tables
 	c := nrs[0]
 	for _, i := range nrs {
@@ -104,7 +107,7 @@ func (r *AwsRouter) UpsertNatRoute(destinationCidrBlock string, ni *discover.Nat
 
 		_, err := r.ec2.CreateRoute(input)
 		if err != nil {
-			return errors.Wrap(err, "Unable to udpate route")
+			return errors.Wrap(err, "Unable to update route")
 			// if aerr, ok := err.(awserr.Error); ok {
 			// 		switch aerr.Code() {
 			// 		default:
@@ -155,4 +158,93 @@ func (r *AwsRouter) PreventSourceDestCheck(ni *discover.NatInstance) error {
 		}
 	}
 	return nil
+}
+
+// findNis looks up the NatInstance for a given instanceId if it exists
+func findNis(nis []*discover.NatInstance, instanceId string) *discover.NatInstance {
+	for _, ni := range nis {
+		if ni.Id == instanceId {
+			return ni
+		}
+	}
+	return nil
+}
+
+// GetCurrentAllocation uses the discovered information to build NatInstanceAllocation in memory
+func GetCurrentAllocation(nis []*discover.NatInstance, rts []*discover.RoutingTable) []*NatInstanceAllocation {
+	if len(nis) < 1 || len(rts) < 1 {
+		return nil
+	}
+
+	byInstanceId := make(map[string]*NatInstanceAllocation)
+	for _, rt := range rts {
+		if nia, ok := byInstanceId[rt.EgressNatInstanceId]; ok {
+			nia.RoutingTables = append(nia.RoutingTables)
+		} else {
+			ni := findNis(nis, rt.EgressNatInstanceId)
+			if ni != nil {
+				nia := &NatInstanceAllocation{
+					NatInstance: ni,
+				}
+				nia.RoutingTables = append(nia.RoutingTables, rt)
+			}
+		}
+	}
+
+	// copy values out of map into slice
+	all := make([]*NatInstanceAllocation, 0, len(byInstanceId))
+	i := 0
+	for _, v := range byInstanceId {
+		all[i] = v
+		i++
+	}
+
+	return all
+}
+
+// AllocationDiffers returns true if discovered allocation differs from newly generated allocation
+func AllocationDiffers(old, new []*NatInstanceAllocation) bool {
+	if len(old) != len(new) {
+		log.Debugf("Allocation lengths differ: %v (old) vs %v (new)", len(old), len(new))
+		return true
+	}
+
+	// sort old instances by launchTime
+	sort.Slice(old, func(i, j int) bool {
+		return old[i].NatInstance.LaunchTime.Before(old[j].NatInstance.LaunchTime)
+	})
+
+	// sort new instances by launchTime
+	sort.Slice(new, func(i, j int) bool {
+		return new[i].NatInstance.LaunchTime.Before(new[j].NatInstance.LaunchTime)
+	})
+
+	for i := range old {
+		if old[i].NatInstance.Id != new[i].NatInstance.Id {
+			log.Debugf("Allocation at %v is for different instance: %v (old) vs %v (new)", i, old[i].NatInstance.Id, new[i].NatInstance.Id)
+			return true
+		}
+
+		if len(old[i].RoutingTables) != len(new[i].RoutingTables) {
+			log.Debugf("Allocation for instance: %v does not have the same routing table count: %v (old) vs %v (new)", i, len(old[i].RoutingTables), len(new[i].RoutingTables))
+			return true
+		}
+		// sort old[i] routing tables by Id
+		sort.Slice(old[i].RoutingTables, func(x, y int) bool {
+			return old[i].RoutingTables[x].Id < old[i].RoutingTables[y].Id
+		})
+
+		// sort new[i] routing tables by Id
+		sort.Slice(new[i].RoutingTables, func(x, y int) bool {
+			return new[i].RoutingTables[x].Id < new[i].RoutingTables[y].Id
+		})
+
+		for j := range old[i].RoutingTables {
+			if old[i].RoutingTables[j].Id != new[i].RoutingTables[j].Id {
+				log.Debugf("Route for instance: %v at %v is for a different routing table: %v (old) vs %v (new)", j, old[i].RoutingTables[j].Id, new[i].RoutingTables[j].Id)
+				return true
+			}
+		}
+	}
+	return false
 }
