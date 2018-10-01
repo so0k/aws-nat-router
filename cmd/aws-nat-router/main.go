@@ -216,10 +216,10 @@ func (c *RouteController) RunOnce() error {
 		err := healthcheck.TCPCheck(addr, c.config.timeout)
 		if err != nil {
 			log.Debugf("\tError for TCPCheck: %v", err)
-			log.Debugf("Instance %v (%v) is dead :(", ni.Id, addr)
+			log.Debugf("Instance %q (%v) is dead :(", ni.Id, addr)
 			deadNis = append(deadNis, ni)
 		} else {
-			log.Debugf("Instance %v (%v) is alive!", ni.Id, addr)
+			log.Debugf("Instance %q (%v) is alive!", ni.Id, addr)
 			liveNis = append(liveNis, ni)
 			// sorted by LaunchTime
 			sort.Slice(liveNis, func(i, j int) bool {
