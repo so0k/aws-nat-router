@@ -20,7 +20,7 @@ import (
 	"github.com/urfave/cli"
 )
 
-var build = "2"
+var build = "3"
 
 func main() {
 	flags := []cli.Flag{
