@@ -84,6 +84,33 @@ data "aws_iam_policy_document" "ec2_router" {
 }
 ```
 
+Systemd Unit
+
+```ini
+[Unit]
+Description=AWS NAT Router
+Documentation=https://github.com/so0k/aws-nat-router
+Requires=network-online.target
+After=network-online.target
+[Service]
+# -z: request a file modified later than the given filename modification date (mtime)
+ExecStartPre=/usr/bin/curl -sLo /usr/local/bin/aws-nat-router /
+  -z /usr/local/bin/aws-nat-router /
+  https://github.com/so0k/aws-nat-router/releases/download/0.1.4/aws-nat-router
+ExecStartPre=/usr/bin/chmod +x /usr/local/bin/aws-nat-router
+Environment=LOG_LEVEL=INFO
+ExecStart=/usr/local/bin/aws-nat-router \
+  --vpc-id ${vpc_id} \
+  --cluster-id ${cluster_id} \
+  --ec2-election \
+  --timeout 500ms \
+  --interval 5s
+Restart=always
+RestartSec=10
+# amount of time (seconds) systemd waits after start before marking it as failed
+TimeoutStartSec=20
+```
+
 ## Todo
 
 `runOnce` implementation:
@@ -108,8 +135,7 @@ Deployment:
 The controller is meant to run on EC2 Instances, prior to k8s bootstrap, thus we can't use Docker / Kubernetes as a deployment mechanism.
 
 - [x] Add GitHub release to CircleCI
-- [ ] Add systemd unit file
-- [ ] Add cloud-init sample
+- [x] Add Sample Systemd unit file
 
 ## Reference
 
